@@ -1,7 +1,7 @@
 /*
 红外传感器自动跟踪程序
 */
-//第一次修改
+//第二次修改
 #include <reg52.h>
 #include "MotorCtrl.h"
 sbit IR_Left=P3^4;
