@@ -1,0 +1,181 @@
+C51 COMPILER V9.56.0.0   MAIN                                                              08/26/2018 13:27:47 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: D:\Keil_v5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\main
+                    -.lst) TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          /*
+   2          红外数据发送到串口，波特率9600
+   3          */
+   4          
+   5          #include <reg52.h>
+   6          //宏定义及全局变量
+   7          #define TimeBase 0.125  //时基为0.125ms
+   8          #define IR_Receive P3^2 //红外接收端
+   9          int IR_TimeDiffGet[33]={0}; //存入采集的下降沿时间差
+  10          unsigned char IR_Data[4]={0}; //存储转换后的编码
+  11          int IR_Time=0;
+  12          bit IR_Finish=0;
+  13          
+  14          
+  15          //子函数
+  16          void InitTimer0();  //初始化定时器0
+  17          void InitInt0();  //初始化外部中断0
+  18          void IR_Coding();
+  19          void DELAY_Us(unsigned int Us); //764~928us
+  20          void DELAY_Ms(unsigned int Ms); //1.007ms
+  21          void InitSCOM();
+  22           
+  23          
+  24          void main()
+  25          { 
+  26   1        int i;
+  27   1        bit SCOMFinish;
+  28   1        InitTimer0();
+  29   1        InitInt0();
+  30   1        InitSCOM();
+  31   1        while(1)
+  32   1        { 
+  33   2          if(IR_Finish==1)  //存数标志位未置位，即存数完成
+  34   2          {
+  35   3            if(IR_Time>=100/TimeBase) //判断遥控器按键是否持续按下：如果IR_Time积累时间大于100ms，则一定松开，复位
+  36   3            {                         //为了防止溢出，给IR_Time赋值，保证按键松开，即没产生中断时灯始终灭
+  37   4              P1=0xff;
+  38   4              IR_Time=100/TimeBase;
+  39   4              IR_Finish=0;    //确认没有按键按下后，使IR_Finish=0，保证不改写P1
+  40   4              SCOMFinish=0;
+  41   4            }
+  42   3            else
+  43   3            {
+  44   4              IR_Coding();
+  45   4              P1=IR_Data[2];  //如果产生中断 则赋值
+  46   4              for(i=0;i<=3&&SCOMFinish==0;i++)
+  47   4              {
+  48   5                SBUF=IR_Data[i];
+  49   5                while(!TI);
+  50   5                TI=0;
+  51   5              }
+  52   4              SCOMFinish=1;
+  53   4            }       
+  54   3          }
+C51 COMPILER V9.56.0.0   MAIN                                                              08/26/2018 13:27:47 PAGE 2   
+
+  55   2          else
+  56   2            P1=0xff;
+  57   2        }
+  58   1      }
+  59          
+  60          void InitTimer0()
+  61          {
+  62   1        TMOD=0x22;  //使用定时器0，方式2,定时器1用于串口
+  63   1        TH0=0x8D; //0.125ms时触发一次中断
+  64   1        TL0=0x8D; //自动装载初值
+  65   1        ET0=1;  //开启定时器0中断
+  66   1        TR0=1;  //定时器0开始运行
+  67   1        EA=1; //开启全局中断
+  68   1        PT0=1;  //定时器0为高优先级中断
+  69   1      }
+  70          
+  71          void InitInt0()
+  72          {
+  73   1        IT0=1;  //外部中断0为下降沿触发
+  74   1        EX0=1;  //开启外部中断0
+  75   1        EA=1; //开启全局中断
+  76   1        PX0=0;  //外部中断0为低优先级中断
+  77   1      }
+  78          
+  79          void InitSCOM()
+  80          {
+  81   1        SM0=0;
+  82   1        SM1=1;  //串口工作在方式1，8位元UART，波特率由TI和SMOD决定
+  83   1        PCON=0;
+  84   1        TH1=0xFD; //波特率9600
+  85   1        TL1=0xFD;
+  86   1        TR1=1;
+  87   1      }
+  88          
+  89          void Timer0Int() interrupt 1 
+  90          {
+  91   1        IR_Time++;  //每计数满一次，IR_Time加1
+  92   1        TF0=0;
+  93   1      }
+  94          
+  95          void External0Int() interrupt 0 using 1
+  96          {
+  97   1        static char i=0;
+  98   1        static bit IR_StartFlag=0;//开始存数标志位
+  99   1        IE0=0;  //外部中断标志位复位
+ 100   1        if(IR_StartFlag==0) //如果存数标志位没有置位
+ 101   1        {
+ 102   2          if(IR_Time>=13/TimeBase&&IR_Time<=14/TimeBase)  //如果读取的时间在引导区域范围内
+ 103   2          {
+ 104   3            i=0;
+ 105   3            IR_StartFlag=1; //开始存数标志位置位
+ 106   3            IR_TimeDiffGet[i]=IR_Time;  //将引导区长度存入IR_TimeDiffGet[0]
+ 107   3            i++;  //数组指针+1
+ 108   3          }
+ 109   2        }
+ 110   1        else if(IR_StartFlag==1&&i<=32) //如果存数标志位已经置位，且数组指针未溢出
+ 111   1        {
+ 112   2          IR_TimeDiffGet[i]=IR_Time;  //将0存入IR_TimeDiffGet[i]
+ 113   2          i++;  //数组指针+1
+ 114   2          if(i<=32)         //如果if 和else if部分移到最后 会导致按下下一次按键时，会保持一段时间上一次按键的结果
+ 115   2            IR_Finish=0;
+ 116   2          else if(i>=33)
+C51 COMPILER V9.56.0.0   MAIN                                                              08/26/2018 13:27:47 PAGE 3   
+
+ 117   2            IR_Finish=1;                
+ 118   2        }
+ 119   1        else  //如果存数标志位已经置位，且数组指针溢出
+ 120   1        {
+ 121   2          IR_StartFlag=0; //存数标志位复位
+ 122   2        }
+ 123   1        IR_Time=0;  //IR_Time复位
+ 124   1      }
+ 125          
+ 126          void IR_Coding()
+ 127          {
+ 128   1        int i,j;
+ 129   1        for(j=0;j<=3;j++)
+ 130   1        {
+ 131   2          for(i=1;i<=8;i++)
+ 132   2          {
+ 133   3            IR_Data[j]>>=1; //IR_Data[j]右移一位
+ 134   3            if(IR_TimeDiffGet[i+8*j]>=1.5/TimeBase) //如果IR_TimeDiffGet里储存的值大于1.5ms，即数值为1
+ 135   3              IR_Data[j]|=0x80; //给最高位赋1
+ 136   3          }
+ 137   2        }
+ 138   1        return;
+ 139   1      }
+ 140          
+ 141          void DELAY_Us(unsigned int Us)
+ 142          {
+ 143   1        unsigned int x;
+ 144   1        for(x = 0; x <= (Us/200-1); x++);
+ 145   1      }
+ 146          void DELAY_Ms(unsigned int Ms)
+ 147          {
+ 148   1        unsigned int x,y;
+ 149   1        for(x = 0; x <= (Ms-1); x++)
+ 150   1        {
+ 151   2          for(y = 0; y <= 120; y++);
+ 152   2        }
+ 153   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    481    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     73       4
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      2       1
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

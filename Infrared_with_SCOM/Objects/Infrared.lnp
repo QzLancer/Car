@@ -1,0 +1,3 @@
+".\Objects\main.obj" 
+TO ".\Objects\Infrared" 
+PRINT(".\Listings\Infrared.m51") RAMSIZE(256) 
