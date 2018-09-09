@@ -1,0 +1,3 @@
+".\Objects\main.obj" 
+TO ".\Objects\LightSensor_Follow" 
+PRINT(".\Listings\LightSensor_Follow.m51") RAMSIZE(256) 
